@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - name: Build Debian live ISO
@@ -16,8 +16,10 @@ jobs:
             apt-get install -y live-build ca-certificates
             cd /build
             lb config --distribution trixie --architectures amd64 --binary-images iso-hybrid --archive-areas "main contrib non-free non-free-firmware" --debian-installer live --debian-installer-gui true --apt-recommends true --bootappend-live "boot=live components username=livetv"
-            mkdir -p config/package-lists config/includes.chroot/usr/local/bin config/includes.chroot/etc/xdg/autostart
-            printf "%s\n" task-xfce-desktop lightdm kodi vlc retroarch firefox-esr steam-installer firmware-linux firmware-iwlwifi firmware-realtek network-manager-gnome blueman mesa-vulkan-drivers python3-tk > config/package-lists/linux-tv.list.chroot
+            mkdir -p config/hooks/live config/package-lists config/includes.chroot/usr/local/bin config/includes.chroot/etc/xdg/autostart
+            printf "%s\n" "#!/bin/sh" "set -e" "dpkg --add-architecture i386" "apt-get update" "DEBIAN_FRONTEND=noninteractive apt-get install -y steam-installer mesa-vulkan-drivers:i386" > config/hooks/live/0100-multiarch.hook.chroot
+            chmod +x config/hooks/live/0100-multiarch.hook.chroot
+            printf "%s\n" task-xfce-desktop lightdm kodi vlc retroarch firefox-esr firmware-linux firmware-iwlwifi firmware-realtek network-manager-gnome blueman mesa-vulkan-drivers python3-tk > config/package-lists/linux-tv.list.chroot
             cat > config/includes.chroot/usr/local/bin/linux-tv <<"PY"
           #!/usr/bin/python3
           import tkinter as tk
