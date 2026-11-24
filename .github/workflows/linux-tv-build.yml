@@ -1,0 +1,62 @@
+name: Build Linux TV ISO
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Build Debian live ISO
+        run: |
+          mkdir -p "$PWD/output"
+          docker run --rm --privileged -v "$PWD/output:/build" debian:trixie bash -euxc '
+            apt-get update
+            apt-get install -y live-build ca-certificates
+            cd /build
+            lb config --distribution trixie --architectures amd64 --binary-images iso-hybrid --archive-areas "main contrib non-free non-free-firmware" --debian-installer live --debian-installer-gui true --apt-recommends true --bootappend-live "boot=live components username=livetv"
+            mkdir -p config/package-lists config/includes.chroot/usr/local/bin config/includes.chroot/etc/xdg/autostart
+            printf "%s\n" task-xfce-desktop lightdm kodi vlc retroarch firefox-esr steam-installer firmware-linux firmware-iwlwifi firmware-realtek network-manager-gnome blueman mesa-vulkan-drivers python3-tk > config/package-lists/linux-tv.list.chroot
+            cat > config/includes.chroot/usr/local/bin/linux-tv <<"PY"
+          #!/usr/bin/python3
+          import tkinter as tk
+          import subprocess
+          root = tk.Tk()
+          root.title("Linux TV")
+          root.attributes("-fullscreen", True)
+          root.configure(bg="#101622")
+          tk.Label(root,text="LINUX TV",font=("Sans",36),bg="#101622",fg="white").pack(pady=35)
+          panel=tk.Frame(root,bg="#101622"); panel.pack(expand=True)
+          apps=[("Kodi",["kodi"]),("Steam",["steam","-bigpicture"]),("RetroArch",["retroarch"]),("VLC",["vlc"]),("YouTube",["firefox-esr","https://www.youtube.com"]),("Netflix",["firefox-esr","https://www.netflix.com"]),("Prime Video",["firefox-esr","https://www.primevideo.com"]),("Desktop",None)]
+          buttons=[]
+          def launch(cmd):
+              if cmd is None: root.destroy(); return
+              root.withdraw()
+              try: p=subprocess.Popen(cmd)
+              except OSError: root.deiconify(); return
+              def poll():
+                  if p.poll() is None: root.after(500,poll)
+                  else: root.deiconify()
+              poll()
+          for i,(name,cmd) in enumerate(apps):
+              b=tk.Button(panel,text=name,font=("Sans",22),width=16,height=3,command=lambda c=cmd:launch(c)); b.grid(row=i//3,column=i%3,padx=10,pady=10); buttons.append(b)
+          for i,b in enumerate(buttons):
+              for key,delta in [("Left",-1),("Right",1),("Up",-3),("Down",3)]: b.bind("<"+key+">",lambda e,i=i,d=delta:buttons[(i+d)%len(buttons)].focus_set())
+              b.bind("<Return>",lambda e,b=b:b.invoke())
+          buttons[0].focus_set()
+          root.bind("<Escape>",lambda e:root.destroy())
+          root.mainloop()
+          PY
+            chmod +x config/includes.chroot/usr/local/bin/linux-tv
+            printf "%s\n" "[Desktop Entry]" "Type=Application" "Name=Linux TV" "Exec=/usr/local/bin/linux-tv" > config/includes.chroot/etc/xdg/autostart/linux-tv.desktop
+            lb build
+          '
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-TV-test-ISO
+          path: output/*.iso
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
